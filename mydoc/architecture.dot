@@ -4,65 +4,72 @@
 digraph ACEStep {
     rankdir=TB;
     splines=ortho;
-    node [fontname="Helvetica", fontsize=12];
+    node [fontname="Helvetica", fontsize=12, style="bold", fillcolor="none"];
     edge [fontname="Helvetica", fontsize=10];
-
-    // Color scheme
-    // Input: lightblue, Encoder: lightgreen, DiT: lightyellow, Output: lightcoral
-    // LM: lavender, VAE: wheat
+    bgcolor="transparent";
 
     // === INPUT LAYER ===
     subgraph cluster_input {
         label="Inputs";
         style=rounded;
-        bgcolor="#e8f4fc";
+        bgcolor="none";
+        color="#4169E1";
+        penwidth=2;
 
-        instruction [label="Instruction\nCaption\nMetas", shape=box, style=filled, fillcolor="#cce5ff"];
-        lyrics [label="Lyrics\n(≤4096 chars)", shape=box, style=filled, fillcolor="#cce5ff"];
-        refer_audio [label="Reference Audio\n(style transfer)", shape=box, style=filled, fillcolor="#cce5ff"];
-        src_audio [label="Source Audio\n(cover/repaint)", shape=box, style=filled, fillcolor="#cce5ff"];
+        instruction [label="Instruction\nCaption\nMetas", shape=box, color="#4169E1", penwidth=2];
+        lyrics [label="Lyrics\n(≤4096 chars)", shape=box, color="#4169E1", penwidth=2];
+        refer_audio [label="Reference Audio\n(style transfer)", shape=box, color="#4169E1", penwidth=2];
+        src_audio [label="Source Audio\n(cover/repaint)", shape=box, color="#4169E1", penwidth=2];
     }
 
     // === TEXT ENCODERS ===
     subgraph cluster_encoders {
         label="Text Encoders";
         style=rounded;
-        bgcolor="#e8f8e8";
+        bgcolor="none";
+        color="#228B22";
+        penwidth=2;
 
-        qwen3_emb [label="Qwen3-0.6B-emb\n(Text Encoder)\n❄️ frozen", shape=box, style="filled,bold", fillcolor="#90EE90"];
-        lyric_encoder [label="Lyric Encoder\n🔥 trainable", shape=box, style="filled,bold", fillcolor="#98FB98"];
-        timbre_encoder [label="Timbre Encoder\n🔥 trainable", shape=box, style="filled,bold", fillcolor="#98FB98"];
+        qwen3_emb [label="Qwen3-0.6B-emb\n(Text Encoder)\n❄️ frozen", shape=box, color="#228B22", penwidth=2];
+        lyric_encoder [label="Lyric Encoder\n🔥 trainable", shape=box, color="#FF6600", penwidth=2];
+        timbre_encoder [label="Timbre Encoder\n🔥 trainable", shape=box, color="#FF6600", penwidth=2];
     }
 
     // === VAE ===
     subgraph cluster_vae {
         label="VAE (AutoencoderOobleck)";
         style=rounded;
-        bgcolor="#fff8dc";
+        bgcolor="none";
+        color="#228B22";
+        penwidth=2;
 
-        vae_encoder [label="1D VAE Encoder\n❄️ frozen\n(×1920 compression)", shape=box, style="filled,bold", fillcolor="#F5DEB3"];
-        vae_decoder [label="1D VAE Decoder\n❄️ frozen", shape=box, style="filled,bold", fillcolor="#F5DEB3"];
+        vae_encoder [label="1D VAE Encoder\n❄️ frozen\n(×1920 compression)", shape=box, color="#228B22", penwidth=2];
+        vae_decoder [label="1D VAE Decoder\n❄️ frozen", shape=box, color="#228B22", penwidth=2];
     }
 
     // === DiT CORE ===
     subgraph cluster_dit {
         label="DiT (Diffusion Transformer) with SWA";
         style=rounded;
-        bgcolor="#fffacd";
+        bgcolor="none";
+        color="#DAA520";
+        penwidth=2;
 
         // Positional encodings
-        rope [label="RoPE\n(Position)", shape=ellipse, style=filled, fillcolor="#FAFAD2"];
-        time_emb [label="Time Embedding\n(Timestep)", shape=ellipse, style=filled, fillcolor="#FAFAD2"];
+        rope [label="RoPE\n(Position)", shape=ellipse, color="#DAA520", penwidth=2];
+        time_emb [label="Time Embedding\n(Timestep)", shape=ellipse, color="#DAA520", penwidth=2];
 
         // DiT blocks
         subgraph cluster_dit_block {
             label="DiT Block (×N)";
             style=dashed;
-            bgcolor="#FFFFE0";
+            bgcolor="none";
+            color="#B8860B";
+            penwidth=2;
 
-            self_attn [label="Self-Attention", shape=box, style=filled, fillcolor="#FFD700"];
-            cross_attn [label="Cross-Attention\n🔥 trainable", shape=box, style=filled, fillcolor="#FFA500"];
-            ffn [label="FFN\n(Feed Forward)", shape=box, style=filled, fillcolor="#FFD700"];
+            self_attn [label="Self-Attention", shape=box, color="#DAA520", penwidth=2];
+            cross_attn [label="Cross-Attention\n🔥 trainable", shape=box, color="#FF6600", penwidth=2];
+            ffn [label="FFN\n(Feed Forward)", shape=box, color="#DAA520", penwidth=2];
         }
 
         patch [label="patch=2", shape=plaintext];
@@ -72,40 +79,46 @@ digraph ACEStep {
     subgraph cluster_audio_tokenizer {
         label="Audio Tokenizer (5Hz LM Interface)";
         style=rounded;
-        bgcolor="#E6E6FA";
+        bgcolor="none";
+        color="#8B008B";
+        penwidth=2;
 
-        target_latent [label="target latent", shape=box, style=filled, fillcolor="#DDA0DD"];
-        attention_pooler [label="Attention Pooler", shape=box, style=filled, fillcolor="#DDA0DD"];
-        hidden_5hz [label="5Hz hidden", shape=box, style=filled, fillcolor="#DDA0DD"];
-        fsq [label="FSQ\n(Finite Scalar Quantization)", shape=box, style="filled,bold", fillcolor="#BA55D3"];
-        audio_codes [label="5Hz Audio Codes\n(for LM)", shape=box, style=filled, fillcolor="#9370DB"];
+        target_latent [label="target latent", shape=box, color="#8B008B", penwidth=2];
+        attention_pooler [label="Attention Pooler", shape=box, color="#8B008B", penwidth=2];
+        hidden_5hz [label="5Hz hidden", shape=box, color="#8B008B", penwidth=2];
+        fsq [label="FSQ\n(Finite Scalar Quantization)", shape=box, color="#8B008B", penwidth=2];
+        audio_codes [label="5Hz Audio Codes\n(for LM)", shape=box, color="#8B008B", penwidth=2];
 
         // Cover path
-        src_latent [label="src latent\n(for cover)", shape=box, style=filled, fillcolor="#D8BFD8"];
-        latent_25hz [label="25Hz latent", shape=box, style=filled, fillcolor="#D8BFD8"];
-        attention_unpooler [label="Attention Unpooler", shape=box, style=filled, fillcolor="#D8BFD8"];
-        quantized_5hz [label="5Hz quantized\nhidden", shape=box, style=filled, fillcolor="#D8BFD8"];
+        src_latent [label="src latent\n(for cover)", shape=box, color="#8B008B", penwidth=2];
+        latent_25hz [label="25Hz latent", shape=box, color="#8B008B", penwidth=2];
+        attention_unpooler [label="Attention Unpooler", shape=box, color="#8B008B", penwidth=2];
+        quantized_5hz [label="5Hz quantized\nhidden", shape=box, color="#8B008B", penwidth=2];
     }
 
     // === 5Hz LANGUAGE MODEL ===
     subgraph cluster_lm {
         label="5Hz Language Model (Planner)";
         style=rounded;
-        bgcolor="#FFE4E1";
+        bgcolor="none";
+        color="#DC143C";
+        penwidth=2;
 
-        lm [label="5Hz LM\n(0.6B / 1.7B / 4B)\nQwen3-based\n🔥 trainable", shape=box, style="filled,bold", fillcolor="#FFA07A"];
-        cot [label="Chain-of-Thought\nReasoning", shape=ellipse, style=filled, fillcolor="#FFB6C1"];
-        metadata_out [label="Metadata Output\n(BPM, Key, Time Sig)", shape=box, style=filled, fillcolor="#FFC0CB"];
-        semantic_codes [label="Semantic Audio Codes\n(composition, timbre)", shape=box, style=filled, fillcolor="#FFC0CB"];
+        lm [label="5Hz LM\n(0.6B / 1.7B / 4B)\nQwen3-based\n🔥 trainable", shape=box, color="#FF6600", penwidth=2];
+        cot [label="Chain-of-Thought\nReasoning", shape=ellipse, color="#DC143C", penwidth=2];
+        metadata_out [label="Metadata Output\n(BPM, Key, Time Sig)", shape=box, color="#DC143C", penwidth=2];
+        semantic_codes [label="Semantic Audio Codes\n(composition, timbre)", shape=box, color="#DC143C", penwidth=2];
     }
 
     // === OUTPUT ===
     subgraph cluster_output {
         label="Output";
         style=rounded;
-        bgcolor="#ffe4e1";
+        bgcolor="none";
+        color="#DC143C";
+        penwidth=2;
 
-        output_audio [label="Output Audio\n48kHz × 2ch\n(10s ~ 10min)", shape=box, style="filled,bold", fillcolor="#FF6347"];
+        output_audio [label="Output Audio\n48kHz × 2ch\n(10s ~ 10min)", shape=box, color="#DC143C", penwidth=2];
     }
 
     // === CONNECTIONS ===
@@ -158,9 +171,11 @@ digraph ACEStep {
     subgraph cluster_legend {
         label="Legend";
         style=rounded;
-        bgcolor="#f5f5f5";
+        bgcolor="none";
+        color="#666666";
+        penwidth=1;
 
-        leg_frozen [label="❄️ Frozen (pre-trained)", shape=plaintext];
-        leg_train [label="🔥 Trainable", shape=plaintext];
+        leg_frozen [label="❄️ Frozen (green border)", shape=plaintext];
+        leg_train [label="🔥 Trainable (orange border)", shape=plaintext];
     }
 }

@@ -94,11 +94,11 @@ flowchart TB
 
     vae_dec --> output_audio
 
-    %% Styling
-    classDef frozen fill:#90EE90,stroke:#228B22
-    classDef trainable fill:#FFA500,stroke:#FF6600
-    classDef input fill:#87CEEB,stroke:#4169E1
-    classDef output fill:#FF6347,stroke:#DC143C
+    %% Styling - transparent backgrounds with colored borders
+    classDef frozen fill:none,stroke:#228B22,stroke-width:2px
+    classDef trainable fill:none,stroke:#FF6600,stroke-width:2px
+    classDef input fill:none,stroke:#4169E1,stroke-width:2px
+    classDef output fill:none,stroke:#DC143C,stroke-width:2px
 
     class qwen3,vae_enc,vae_dec frozen
     class lyric_enc,timbre_enc,cross_attn,lm_model trainable
