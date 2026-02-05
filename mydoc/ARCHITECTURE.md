@@ -8,6 +8,106 @@
 
 ACE-Step V1.5は**ハイブリッド・ツーブレイン・アーキテクチャ**を採用しています。
 
+## Architecture Diagram (Mermaid)
+
+```mermaid
+flowchart TB
+    subgraph Inputs["Inputs"]
+        caption["Instruction<br/>Caption<br/>Metas"]
+        lyrics["Lyrics<br/>(≤4096 chars)"]
+        ref_audio["Reference Audio<br/>(style transfer)"]
+        src_audio["Source Audio<br/>(cover/repaint)"]
+    end
+
+    subgraph Encoders["Text Encoders"]
+        qwen3["Qwen3-0.6B-emb<br/>(frozen)"]
+        lyric_enc["Lyric Encoder<br/>(trainable)"]
+        timbre_enc["Timbre Encoder<br/>(trainable)"]
+    end
+
+    subgraph VAE["VAE (AutoencoderOobleck)"]
+        vae_enc["1D VAE Encoder<br/>(frozen, x1920)"]
+        vae_dec["1D VAE Decoder<br/>(frozen)"]
+    end
+
+    subgraph DiT["DiT (Diffusion Transformer) with SWA"]
+        direction TB
+        rope["RoPE<br/>(Position)"]
+        time_emb["Time Embedding<br/>(Timestep)"]
+
+        subgraph DiTBlock["DiT Block (×N)"]
+            self_attn["Self-Attention"]
+            cross_attn["Cross-Attention<br/>(trainable)"]
+            ffn["FFN"]
+        end
+    end
+
+    subgraph AudioTokenizer["Audio Tokenizer (5Hz LM Interface)"]
+        target_latent["target latent"]
+        attn_pooler["Attention Pooler"]
+        hidden_5hz["5Hz hidden"]
+        fsq["FSQ<br/>(Finite Scalar Quantization)"]
+        audio_codes["5Hz Audio Codes"]
+    end
+
+    subgraph LM["5Hz Language Model (Planner)"]
+        lm_model["5Hz LM<br/>(0.6B / 1.7B / 4B)<br/>Qwen3-based"]
+        cot["Chain-of-Thought<br/>Reasoning"]
+        metadata["Metadata Output<br/>(BPM, Key, Time Sig)"]
+        semantic["Semantic Audio Codes<br/>(composition, timbre)"]
+    end
+
+    subgraph Output["Output"]
+        output_audio["Output Audio<br/>48kHz × 2ch<br/>(10s ~ 10min)"]
+    end
+
+    %% Connections
+    caption --> qwen3
+    lyrics --> lyric_enc
+    ref_audio --> timbre_enc
+    src_audio --> vae_enc
+
+    qwen3 --> cross_attn
+    lyric_enc --> cross_attn
+    timbre_enc --> cross_attn
+
+    vae_enc --> self_attn
+    rope --> self_attn
+    time_emb --> self_attn
+
+    self_attn --> cross_attn
+    cross_attn --> ffn
+
+    ffn --> target_latent
+    ffn --> vae_dec
+
+    target_latent --> attn_pooler
+    attn_pooler --> hidden_5hz
+    hidden_5hz --> fsq
+    fsq --> audio_codes
+
+    audio_codes --> lm_model
+    lm_model --> cot
+    cot --> metadata
+    cot --> semantic
+    semantic -.->|hints| cross_attn
+
+    vae_dec --> output_audio
+
+    %% Styling
+    classDef frozen fill:#90EE90,stroke:#228B22
+    classDef trainable fill:#FFA500,stroke:#FF6600
+    classDef input fill:#87CEEB,stroke:#4169E1
+    classDef output fill:#FF6347,stroke:#DC143C
+
+    class qwen3,vae_enc,vae_dec frozen
+    class lyric_enc,timbre_enc,cross_attn,lm_model trainable
+    class caption,lyrics,ref_audio,src_audio input
+    class output_audio output
+```
+
+## Architecture Diagram (ASCII)
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        ACE-Step V1.5 Architecture                           │
@@ -79,6 +179,32 @@ ACE-Step V1.5は**ハイブリッド・ツーブレイン・アーキテクチ�
                                                    │ (BPM,Key)   Audio Codes │
                                                    └─────────────────────────┘
 ```
+
+## Graphviz Diagram (SVG)
+
+SVGを生成するには以下のコマンドを実行してください:
+
+```bash
+# Install Graphviz
+sudo apt-get install graphviz  # Ubuntu/Debian
+brew install graphviz          # macOS
+
+# Generate SVG from dot file
+dot -Tsvg architecture.dot -o architecture.svg
+
+# Generate PNG
+dot -Tpng architecture.dot -o architecture.png
+```
+
+オンラインでレンダリング:
+- [GraphvizOnline](https://dreampuf.github.io/GraphvizOnline/) - `architecture.dot` の内容を貼り付け
+- [Kroki](https://kroki.io/) - API経由でレンダリング
+
+生成後、以下で表示:
+
+![Architecture Diagram](./architecture.svg)
+
+---
 
 ## Main Components
 
@@ -168,24 +294,6 @@ ACE-Step V1.5は**ハイブリッド・ツーブレイン・アーキテクチ�
 - **Low VRAM**: Runs on < 4GB with CPU offloading
 - **50+ Languages**: Multi-lingual lyrics support
 
-## Graphviz Diagram
-
-The `architecture.dot` file in this directory can be rendered using Graphviz:
-
-```bash
-# Install Graphviz
-sudo apt-get install graphviz  # Ubuntu/Debian
-brew install graphviz          # macOS
-
-# Generate PNG
-dot -Tpng architecture.dot -o architecture.png
-
-# Generate SVG
-dot -Tsvg architecture.dot -o architecture.svg
-```
-
-Or view online at: https://dreampuf.github.io/GraphvizOnline/
-
 ## References
 
 - **Technical Report**: [arXiv:2602.00744](https://arxiv.org/abs/2602.00744)
@@ -195,4 +303,6 @@ Or view online at: https://dreampuf.github.io/GraphvizOnline/
 
 ## Official Architecture Diagram
 
-See `assets/ACE-Step_framework.png` in the project root for the official architecture diagram.
+See `../assets/ACE-Step_framework.png` in the project root for the official architecture diagram.
+
+![Official ACE-Step Framework](../assets/ACE-Step_framework.png)
