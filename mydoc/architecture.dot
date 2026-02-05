@@ -1,0 +1,166 @@
+// ACE-Step V1.5 Model Architecture
+// Hybrid Two-Brain Architecture: Language Model (Planner) + DiT (Executor)
+
+digraph ACEStep {
+    rankdir=TB;
+    splines=ortho;
+    node [fontname="Helvetica", fontsize=12];
+    edge [fontname="Helvetica", fontsize=10];
+
+    // Color scheme
+    // Input: lightblue, Encoder: lightgreen, DiT: lightyellow, Output: lightcoral
+    // LM: lavender, VAE: wheat
+
+    // === INPUT LAYER ===
+    subgraph cluster_input {
+        label="Inputs";
+        style=rounded;
+        bgcolor="#e8f4fc";
+
+        instruction [label="Instruction\nCaption\nMetas", shape=box, style=filled, fillcolor="#cce5ff"];
+        lyrics [label="Lyrics\n(≤4096 chars)", shape=box, style=filled, fillcolor="#cce5ff"];
+        refer_audio [label="Reference Audio\n(style transfer)", shape=box, style=filled, fillcolor="#cce5ff"];
+        src_audio [label="Source Audio\n(cover/repaint)", shape=box, style=filled, fillcolor="#cce5ff"];
+    }
+
+    // === TEXT ENCODERS ===
+    subgraph cluster_encoders {
+        label="Text Encoders";
+        style=rounded;
+        bgcolor="#e8f8e8";
+
+        qwen3_emb [label="Qwen3-0.6B-emb\n(Text Encoder)\n❄️ frozen", shape=box, style="filled,bold", fillcolor="#90EE90"];
+        lyric_encoder [label="Lyric Encoder\n🔥 trainable", shape=box, style="filled,bold", fillcolor="#98FB98"];
+        timbre_encoder [label="Timbre Encoder\n🔥 trainable", shape=box, style="filled,bold", fillcolor="#98FB98"];
+    }
+
+    // === VAE ===
+    subgraph cluster_vae {
+        label="VAE (AutoencoderOobleck)";
+        style=rounded;
+        bgcolor="#fff8dc";
+
+        vae_encoder [label="1D VAE Encoder\n❄️ frozen\n(×1920 compression)", shape=box, style="filled,bold", fillcolor="#F5DEB3"];
+        vae_decoder [label="1D VAE Decoder\n❄️ frozen", shape=box, style="filled,bold", fillcolor="#F5DEB3"];
+    }
+
+    // === DiT CORE ===
+    subgraph cluster_dit {
+        label="DiT (Diffusion Transformer) with SWA";
+        style=rounded;
+        bgcolor="#fffacd";
+
+        // Positional encodings
+        rope [label="RoPE\n(Position)", shape=ellipse, style=filled, fillcolor="#FAFAD2"];
+        time_emb [label="Time Embedding\n(Timestep)", shape=ellipse, style=filled, fillcolor="#FAFAD2"];
+
+        // DiT blocks
+        subgraph cluster_dit_block {
+            label="DiT Block (×N)";
+            style=dashed;
+            bgcolor="#FFFFE0";
+
+            self_attn [label="Self-Attention", shape=box, style=filled, fillcolor="#FFD700"];
+            cross_attn [label="Cross-Attention\n🔥 trainable", shape=box, style=filled, fillcolor="#FFA500"];
+            ffn [label="FFN\n(Feed Forward)", shape=box, style=filled, fillcolor="#FFD700"];
+        }
+
+        patch [label="patch=2", shape=plaintext];
+    }
+
+    // === AUDIO TOKENIZER (for LM) ===
+    subgraph cluster_audio_tokenizer {
+        label="Audio Tokenizer (5Hz LM Interface)";
+        style=rounded;
+        bgcolor="#E6E6FA";
+
+        target_latent [label="target latent", shape=box, style=filled, fillcolor="#DDA0DD"];
+        attention_pooler [label="Attention Pooler", shape=box, style=filled, fillcolor="#DDA0DD"];
+        hidden_5hz [label="5Hz hidden", shape=box, style=filled, fillcolor="#DDA0DD"];
+        fsq [label="FSQ\n(Finite Scalar Quantization)", shape=box, style="filled,bold", fillcolor="#BA55D3"];
+        audio_codes [label="5Hz Audio Codes\n(for LM)", shape=box, style=filled, fillcolor="#9370DB"];
+
+        // Cover path
+        src_latent [label="src latent\n(for cover)", shape=box, style=filled, fillcolor="#D8BFD8"];
+        latent_25hz [label="25Hz latent", shape=box, style=filled, fillcolor="#D8BFD8"];
+        attention_unpooler [label="Attention Unpooler", shape=box, style=filled, fillcolor="#D8BFD8"];
+        quantized_5hz [label="5Hz quantized\nhidden", shape=box, style=filled, fillcolor="#D8BFD8"];
+    }
+
+    // === 5Hz LANGUAGE MODEL ===
+    subgraph cluster_lm {
+        label="5Hz Language Model (Planner)";
+        style=rounded;
+        bgcolor="#FFE4E1";
+
+        lm [label="5Hz LM\n(0.6B / 1.7B / 4B)\nQwen3-based\n🔥 trainable", shape=box, style="filled,bold", fillcolor="#FFA07A"];
+        cot [label="Chain-of-Thought\nReasoning", shape=ellipse, style=filled, fillcolor="#FFB6C1"];
+        metadata_out [label="Metadata Output\n(BPM, Key, Time Sig)", shape=box, style=filled, fillcolor="#FFC0CB"];
+        semantic_codes [label="Semantic Audio Codes\n(composition, timbre)", shape=box, style=filled, fillcolor="#FFC0CB"];
+    }
+
+    // === OUTPUT ===
+    subgraph cluster_output {
+        label="Output";
+        style=rounded;
+        bgcolor="#ffe4e1";
+
+        output_audio [label="Output Audio\n48kHz × 2ch\n(10s ~ 10min)", shape=box, style="filled,bold", fillcolor="#FF6347"];
+    }
+
+    // === CONNECTIONS ===
+
+    // Input to Encoders
+    instruction -> qwen3_emb;
+    lyrics -> lyric_encoder;
+    refer_audio -> timbre_encoder;
+
+    // Audio to VAE
+    src_audio -> vae_encoder;
+
+    // Encoders to DiT
+    qwen3_emb -> cross_attn;
+    lyric_encoder -> cross_attn;
+    timbre_encoder -> cross_attn;
+
+    // VAE to DiT
+    vae_encoder -> patch -> self_attn;
+
+    // Position/Time embeddings
+    rope -> self_attn;
+    time_emb -> self_attn;
+
+    // DiT internal flow
+    self_attn -> cross_attn -> ffn;
+
+    // DiT output paths
+    ffn -> target_latent [label="  generate"];
+    ffn -> vae_decoder [label="  decode"];
+
+    // Audio Tokenizer flow
+    target_latent -> attention_pooler -> hidden_5hz -> fsq -> audio_codes;
+
+    // Cover path
+    src_latent -> latent_25hz -> attention_unpooler -> quantized_5hz;
+    quantized_5hz -> fsq;
+
+    // LM connections
+    audio_codes -> lm;
+    lm -> cot;
+    cot -> metadata_out;
+    cot -> semantic_codes;
+    semantic_codes -> cross_attn [style=dashed, label="  hints"];
+
+    // Final output
+    vae_decoder -> output_audio;
+
+    // Legend
+    subgraph cluster_legend {
+        label="Legend";
+        style=rounded;
+        bgcolor="#f5f5f5";
+
+        leg_frozen [label="❄️ Frozen (pre-trained)", shape=plaintext];
+        leg_train [label="🔥 Trainable", shape=plaintext];
+    }
+}
