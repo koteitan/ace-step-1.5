@@ -97,7 +97,26 @@ def inject_lora_into_dit(
     
     # Get the decoder (DiT model)
     decoder = model.decoder
-    
+
+    # Dequantize torchao-quantized Linear layers before LoRA injection
+    # peft's TorchaoLoraLinear requires get_apply_tensor_subclass which is
+    # not provided by torchao's quantize_. Converting back to regular Linear
+    # allows standard LoRA injection and fp32/bf16 training.
+    try:
+        from torchao.quantization.linear_activation_quantized_tensor import LinearActivationQuantizedTensor
+        _has_torchao = True
+    except ImportError:
+        _has_torchao = False
+
+    if _has_torchao:
+        for name, module in decoder.named_modules():
+            if isinstance(module, nn.Linear) and hasattr(module.weight, 'tensor_impl'):
+                # This is a torchao quantized linear - convert weight back to regular tensor
+                with torch.no_grad():
+                    new_weight = module.weight.dequantize() if hasattr(module.weight, 'dequantize') else module.weight.to(torch.bfloat16)
+                    module.weight = nn.Parameter(new_weight)
+                    logger.info(f"[inject_lora] Dequantized: {name}")
+
     # Create PEFT LoRA config
     peft_lora_config = LoraConfig(
         r=lora_config.r,

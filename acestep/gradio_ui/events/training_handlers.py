@@ -693,6 +693,17 @@ def start_training(
             yield display_status, log_text, loss_data, training_state
             
             if training_state.get("should_stop", False):
+                # Save LoRA weights before stopping
+                from acestep.training.lora_utils import save_lora_weights
+                stop_path = os.path.join(lora_output_dir, "stopped")
+                try:
+                    save_lora_weights(dit_handler.model, stop_path)
+                    logger.info(f"💾 LoRA saved to {stop_path}")
+                    log_lines.append(f"💾 LoRA saved to {stop_path}")
+                except Exception as save_err:
+                    logger.warning(f"Failed to save LoRA on stop: {save_err}")
+                dit_handler.lora_loaded = True
+                dit_handler.use_lora = True
                 logger.info("⏹️ Training stopped by user")
                 log_lines.append("⏹️ Training stopped by user")
                 yield f"⏹️ Stopped ({time_info})", "\n".join(log_lines[-15:]), loss_data, training_state
@@ -700,6 +711,11 @@ def start_training(
         
         total_time = time.time() - start_time
         training_state["is_training"] = False
+
+        # Mark LoRA as loaded in handler so inference can use it
+        dit_handler.lora_loaded = True
+        dit_handler.use_lora = True
+
         completion_msg = f"✅ Training completed! Total time: {_format_duration(total_time)}"
         
         logger.info(completion_msg)

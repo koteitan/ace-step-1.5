@@ -174,6 +174,18 @@ class AceStepHandler:
                 self.model.decoder = copy.deepcopy(self._base_decoder)
                 logger.info("Restored base decoder before loading new LoRA")
             
+            # Dequantize torchao-quantized layers before LoRA injection
+            try:
+                from torchao.quantization.linear_activation_quantized_tensor import LinearActivationQuantizedTensor
+                for name, module in self.model.decoder.named_modules():
+                    if isinstance(module, torch.nn.Linear) and hasattr(module.weight, 'tensor_impl'):
+                        with torch.no_grad():
+                            new_weight = module.weight.dequantize() if hasattr(module.weight, 'dequantize') else module.weight.to(torch.bfloat16)
+                            module.weight = torch.nn.Parameter(new_weight)
+                            logger.info(f"[load_lora] Dequantized: {name}")
+            except ImportError:
+                pass
+
             # Load PEFT adapter
             logger.info(f"Loading LoRA adapter from {lora_path}")
             self.model.decoder = PeftModel.from_pretrained(

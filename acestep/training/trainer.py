@@ -259,10 +259,9 @@ class LoRATrainer:
             
             yield 0, 0.0, f"📂 Loaded {len(data_module.train_dataset)} preprocessed samples"
 
-            if LIGHTNING_AVAILABLE:
-                yield from self._train_with_fabric(data_module, training_state, resume_from)
-            else:
-                yield from self._train_basic(data_module, training_state)
+            # Use basic training loop (Fabric's device management conflicts
+            # with CPU-offload environments and DataLoader workers)
+            yield from self._train_basic(data_module, training_state)
                 
         except Exception as e:
             logger.exception("Training failed")
@@ -343,12 +342,15 @@ class LoRATrainer:
             milestones=[warmup_steps],
         )
         
-        # Convert model to bfloat16 (entire model for consistent dtype)
-        self.module.model = self.module.model.to(torch.bfloat16)
+        # Move decoder to GPU and convert to bfloat16 for training
+        # (CPU offload may have left it on CPU)
+        self.module.model.decoder = self.module.model.decoder.to(self.module.device).to(torch.bfloat16)
 
         # Setup with Fabric - only the decoder (which has LoRA)
         self.module.model.decoder, optimizer = self.fabric.setup(self.module.model.decoder, optimizer)
-        train_loader = self.fabric.setup_dataloaders(train_loader)
+        # Do NOT use fabric.setup_dataloaders: it replaces the sampler with a
+        # CUDA-generator variant that crashes when num_workers > 0.
+        # Data is moved to device manually in training_step.
 
         # Handle resume from checkpoint (load AFTER Fabric setup)
         start_epoch = 0
@@ -424,7 +426,12 @@ class LoRATrainer:
             for batch_idx, batch in enumerate(train_loader):
                 # Check for stop signal
                 if training_state and training_state.get("should_stop", False):
-                    yield global_step, accumulated_loss / max(accumulation_step, 1), "⏹️ Training stopped by user"
+                    # Save LoRA weights before stopping
+                    stop_path = os.path.join(self.training_config.output_dir, "stopped")
+                    save_lora_weights(self.module.model, stop_path)
+                    avg = accumulated_loss / max(accumulation_step, 1)
+                    yield global_step, avg, f"💾 Saved to {stop_path}"
+                    yield global_step, avg, "⏹️ Training stopped by user"
                     return
                 
                 # Forward pass
@@ -496,12 +503,33 @@ class LoRATrainer:
         training_state: Optional[Dict],
     ) -> Generator[Tuple[int, float, str], None, None]:
         """Basic training loop without Fabric."""
-        yield 0, 0.0, "🚀 Starting basic training loop..."
-        
+        yield 0, 0.0, "🚀 Starting training (precision: bf16-mixed)..."
+
         os.makedirs(self.training_config.output_dir, exist_ok=True)
-        
-        train_loader = data_module.train_dataloader()
-        
+
+        # Move decoder to CUDA for training (CPU offload may have left it on CPU)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.module.model.decoder = self.module.model.decoder.to(device).to(torch.bfloat16)
+        self.module.device = device
+
+        # Temporarily clear default device to prevent DataLoader internals
+        # from creating CUDA tensors that conflict with CPU generator
+        from torch.utils.data import DataLoader
+        from acestep.training.data_module import collate_preprocessed_batch
+        _prev_default = torch.get_default_device()
+        torch.set_default_device(None)
+        train_loader = DataLoader(
+            data_module.train_dataset,
+            batch_size=self.training_config.batch_size,
+            shuffle=True,
+            num_workers=0,
+            pin_memory=False,
+            collate_fn=collate_preprocessed_batch,
+            drop_last=True,
+        )
+        if _prev_default is not None:
+            torch.set_default_device(_prev_default)
+
         trainable_params = [p for p in self.module.model.parameters() if p.requires_grad]
         
         if not trainable_params:
@@ -534,7 +562,11 @@ class LoRATrainer:
             
             for batch in train_loader:
                 if training_state and training_state.get("should_stop", False):
-                    yield global_step, accumulated_loss / max(accumulation_step, 1), "⏹️ Training stopped"
+                    stop_path = os.path.join(self.training_config.output_dir, "stopped")
+                    save_lora_weights(self.module.model, stop_path)
+                    avg = accumulated_loss / max(accumulation_step, 1)
+                    yield global_step, avg, f"💾 Saved to {stop_path}"
+                    yield global_step, avg, "⏹️ Training stopped"
                     return
                 
                 loss = self.module.training_step(batch)
