@@ -350,10 +350,9 @@ def create_training_section(dit_handler, llm_handler, init_params=None) -> dict:
                             size="lg",
                         )
                 
-                preprocess_progress = gr.Textbox(
+                preprocess_progress = gr.HTML(
+                    value="",
                     label="Preprocessing Progress",
-                    interactive=False,
-                    lines=3,
                 )
             
             # ==================== Training Tab ====================
