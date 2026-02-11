@@ -958,6 +958,14 @@ class DatasetBuilder:
         random.shuffle(all_indices)
         genre_indices = set(all_indices[:num_genre_samples])
 
+        # Move models to GPU for the entire preprocessing loop
+        # _load_model_context handles offload (GPU<->CPU) automatically
+        from contextlib import ExitStack
+        _exit_stack = ExitStack()
+        _exit_stack.enter_context(dit_handler._load_model_context("vae"))
+        _exit_stack.enter_context(dit_handler._load_model_context("text_encoder"))
+        _exit_stack.enter_context(dit_handler._load_model_context("model"))
+
         for i, sample in enumerate(labeled_samples):
             try:
                 if progress_callback:
@@ -968,31 +976,32 @@ class DatasetBuilder:
 
                 # Step 1: Load and preprocess audio to stereo @ 48kHz
                 audio, sr = torchaudio.load(sample.audio_path)
-                
+
                 # Resample if needed
                 if sr != target_sample_rate:
                     resampler = torchaudio.transforms.Resample(sr, target_sample_rate)
                     audio = resampler(audio)
-                
+
                 # Convert to stereo
                 if audio.shape[0] == 1:
                     audio = audio.repeat(2, 1)
                 elif audio.shape[0] > 2:
                     audio = audio[:2, :]
-                
+
                 # Truncate to max duration
                 max_samples = int(max_duration * target_sample_rate)
                 if audio.shape[1] > max_samples:
                     audio = audio[:, :max_samples]
-                
+
                 # Add batch dimension: [2, T] -> [1, 2, T]
-                audio = audio.unsqueeze(0).to(device).to(vae.dtype)
-                
+                # Use VAE's actual device (GPU when loaded via _load_model_context)
+                audio = audio.unsqueeze(0).to(next(vae.parameters()).device).to(vae.dtype)
+
                 # Step 2: VAE encode audio to get target_latents
                 with torch.no_grad():
                     latent = vae.encode(audio).latent_dist.sample()
                     # [1, 64, T_latent] -> [1, T_latent, 64]
-                    target_latents = latent.transpose(1, 2).to(dtype)
+                    target_latents = latent.transpose(1, 2).to(dtype).to(device)
                 
                 latent_length = target_latents.shape[1]
                 
@@ -1136,8 +1145,11 @@ class DatasetBuilder:
         with open(manifest_path, 'w', encoding='utf-8') as f:
             json.dump(manifest, f, indent=2)
         
+        # Offload models back to CPU
+        _exit_stack.close()
+
         status = f"✅ Preprocessed {success_count}/{len(labeled_samples)} samples to {output_dir}"
         if fail_count > 0:
             status += f" ({fail_count} failed)"
-        
+
         return output_paths, status
