@@ -967,7 +967,15 @@ class DatasetBuilder:
                 use_genre = i in genre_indices
 
                 # Step 1: Load and preprocess audio to stereo @ 48kHz
-                audio, sr = torchaudio.load(sample.audio_path)
+                try:
+                    import soundfile as sf
+                    import numpy as np
+                    data, sr = sf.read(sample.audio_path, dtype='float32')
+                    if data.ndim == 1:
+                        data = np.stack([data, data], axis=-1)
+                    audio = torch.from_numpy(data.T)  # [channels, samples]
+                except Exception:
+                    audio, sr = torchaudio.load(sample.audio_path)
                 
                 # Resample if needed
                 if sr != target_sample_rate:
