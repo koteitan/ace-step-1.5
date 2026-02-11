@@ -967,7 +967,15 @@ class DatasetBuilder:
                 use_genre = i in genre_indices
 
                 # Step 1: Load and preprocess audio to stereo @ 48kHz
-                audio, sr = torchaudio.load(sample.audio_path)
+                try:
+                    import soundfile as sf
+                    import numpy as np
+                    data, sr = sf.read(sample.audio_path, dtype='float32')
+                    if data.ndim == 1:
+                        data = np.stack([data, data], axis=-1)
+                    audio = torch.from_numpy(data.T)  # [channels, samples]
+                except Exception:
+                    audio, sr = torchaudio.load(sample.audio_path)
                 
                 # Resample if needed
                 if sr != target_sample_rate:
@@ -986,8 +994,10 @@ class DatasetBuilder:
                     audio = audio[:, :max_samples]
                 
                 # Add batch dimension: [2, T] -> [1, 2, T]
-                audio = audio.unsqueeze(0).to(device).to(vae.dtype)
-                
+                # Use VAE's device (may be CPU due to offload) instead of target device
+                vae_device = next(vae.parameters()).device
+                audio = audio.unsqueeze(0).to(vae_device).to(vae.dtype)
+
                 # Step 2: VAE encode audio to get target_latents
                 with torch.no_grad():
                     latent = vae.encode(audio).latent_dist.sample()
