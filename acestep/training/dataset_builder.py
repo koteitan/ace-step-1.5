@@ -958,10 +958,21 @@ class DatasetBuilder:
         random.shuffle(all_indices)
         genre_indices = set(all_indices[:num_genre_samples])
 
+        import time as _time
+        _preprocess_start = _time.time()
+
         for i, sample in enumerate(labeled_samples):
             try:
+                elapsed = _time.time() - _preprocess_start
+                if i > 0:
+                    avg_per_sample = elapsed / i
+                    remaining = avg_per_sample * (len(labeled_samples) - i)
+                    msg = f"processing | elapsed {elapsed:.1f}s | remaining {remaining:.1f}s | {i+1}/{len(labeled_samples)} files"
+                else:
+                    msg = f"processing | elapsed 0.0s | remaining ...s | {i+1}/{len(labeled_samples)} files"
+                logger.info(f"[Preprocess] {msg}")
                 if progress_callback:
-                    progress_callback(f"Preprocessing {i+1}/{len(labeled_samples)}: {sample.filename}")
+                    progress_callback(msg)
 
                 # Determine if this sample uses genre (per-sample override > global ratio)
                 use_genre = i in genre_indices
@@ -1119,7 +1130,8 @@ class DatasetBuilder:
                 torch.save(output_data, output_path)
                 output_paths.append(output_path)
                 success_count += 1
-                
+                logger.info(f"[Preprocess] ✓ {sample.filename} saved to {output_path}")
+
             except Exception as e:
                 logger.exception(f"Error preprocessing {sample.filename}")
                 fail_count += 1
@@ -1136,8 +1148,19 @@ class DatasetBuilder:
         with open(manifest_path, 'w', encoding='utf-8') as f:
             json.dump(manifest, f, indent=2)
         
-        status = f"✅ Preprocessed {success_count}/{len(labeled_samples)} samples to {output_dir}"
+        total_elapsed = _time.time() - _preprocess_start
+        _h = int(total_elapsed) // 3600
+        _m = int(total_elapsed) % 3600 // 60
+        _s = total_elapsed - _h * 3600 - _m * 60
+        if _h > 0:
+            _elapsed_str = f"{_h}h{_m}m{_s:.1f}s"
+        elif _m > 0:
+            _elapsed_str = f"{_m}m{_s:.1f}s"
+        else:
+            _elapsed_str = f"{_s:.1f}s"
+        status = f"✅ Preprocessed {success_count}/{len(labeled_samples)} samples to {output_dir} ({_elapsed_str})"
         if fail_count > 0:
             status += f" ({fail_count} failed)"
-        
+        logger.info(f"[Preprocess] Done: {status}")
+
         return output_paths, status

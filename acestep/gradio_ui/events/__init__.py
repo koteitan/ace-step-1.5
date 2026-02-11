@@ -1106,10 +1106,11 @@ def setup_training_event_handlers(demo, dit_handler, llm_handler, training_secti
     )
     
     # Preprocess dataset to tensor files
+    def _preprocess_wrapper(output_dir, state, progress=gr.Progress(track_tqdm=False)):
+        yield from train_h.preprocess_dataset(output_dir, dit_handler, state, progress)
+
     training_section["preprocess_btn"].click(
-        fn=lambda output_dir, state: train_h.preprocess_dataset(
-            output_dir, dit_handler, state
-        ),
+        fn=_preprocess_wrapper,
         inputs=[
             training_section["preprocess_output_dir"],
             training_section["dataset_builder_state"],

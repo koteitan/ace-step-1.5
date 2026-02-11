@@ -363,45 +363,135 @@ def preprocess_dataset(
     dit_handler,
     builder_state: Optional[DatasetBuilder],
     progress=None,
-) -> str:
+):
     """Preprocess dataset to tensor files for fast training.
-    
+
     This converts audio files to VAE latents and text to embeddings.
-    
-    Returns:
-        Status message
+    Yields progress messages with real-time elapsed timer to the Gradio UI.
     """
     if builder_state is None:
-        return "❌ No dataset loaded. Please scan a directory first."
-    
+        yield "❌ No dataset loaded. Please scan a directory first."
+        return
+
     if not builder_state.samples:
-        return "❌ No samples in dataset."
-    
+        yield "❌ No samples in dataset."
+        return
+
     labeled_count = builder_state.get_labeled_count()
     if labeled_count == 0:
-        return "❌ No labeled samples. Please auto-label or manually label samples first."
-    
+        yield "❌ No labeled samples. Please auto-label or manually label samples first."
+        return
+
     if not output_dir or not output_dir.strip():
-        return "❌ Please enter an output directory."
-    
+        yield "❌ Please enter an output directory."
+        return
+
     if dit_handler is None or dit_handler.model is None:
-        return "❌ Model not initialized. Please initialize the service first."
-    
+        yield "❌ Model not initialized. Please initialize the service first."
+        return
+
+    # Use a mutable container to pass progress from callback
+    _progress_info = [None]
+
     def progress_callback(msg):
-        if progress:
-            try:
-                progress(msg)
-            except:
-                pass
-    
-    # Run preprocessing
-    output_paths, status = builder_state.preprocess_to_tensors(
-        dit_handler=dit_handler,
-        output_dir=output_dir.strip(),
-        progress_callback=progress_callback,
-    )
-    
-    return status
+        _progress_info[0] = msg
+
+    # Run preprocessing in a thread to yield progress
+    import threading
+    _result = [None, None]
+    _done = threading.Event()
+
+    def _run():
+        try:
+            _result[0], _result[1] = builder_state.preprocess_to_tensors(
+                dit_handler=dit_handler,
+                output_dir=output_dir.strip(),
+                progress_callback=progress_callback,
+            )
+        except Exception as e:
+            _result[1] = f"❌ Error: {e}"
+        finally:
+            _done.set()
+
+    t = threading.Thread(target=_run)
+    t.start()
+
+    import time, re
+    _start_time = time.time()
+    _last_cur = 0
+    _last_tot = 0
+    _last_remaining = 0.0
+    last_base_msg = None
+
+    def _fmt_hms(seconds):
+        """Format seconds as *h*m*.?s"""
+        h = int(seconds) // 3600
+        m = int(seconds) % 3600 // 60
+        s = seconds - h * 3600 - m * 60
+        if h > 0:
+            return f"{h}h{m}m{s:.1f}s"
+        elif m > 0:
+            return f"{m}m{s:.1f}s"
+        else:
+            return f"{s:.1f}s"
+
+    def _make_html(elapsed_s, remaining_s, cur, tot, done_msg=None):
+        """Generate HTML with JS timer for real-time elapsed updates."""
+        if done_msg:
+            return f'<div style="font-family:monospace;font-size:14px;padding:8px;">{done_msg}</div>'
+        rem_str = _fmt_hms(remaining_s)
+        return (
+            f'<div style="font-family:monospace;font-size:14px;padding:8px;">'
+            f'processing | elapsed <span id="pp-elapsed">{_fmt_hms(elapsed_s)}</span>'
+            f' | remaining ~{rem_str}'
+            f' | {cur}/{tot} files'
+            f'</div>'
+            f'<script>'
+            f'(function(){{'
+            f'  var st={elapsed_s*1000};'
+            f'  var t0=Date.now();'
+            f'  if(window._ppTimer) clearInterval(window._ppTimer);'
+            f'  window._ppTimer=setInterval(function(){{'
+            f'    var el=document.getElementById("pp-elapsed");'
+            f'    if(!el){{clearInterval(window._ppTimer);return;}}'
+            f'    var sec=(st+Date.now()-t0)/1000;'
+            f'    var h=Math.floor(sec/3600);'
+            f'    var m=Math.floor(sec%3600/60);'
+            f'    var s=sec-h*3600-m*60;'
+            f'    if(h>0) el.textContent=h+"h"+m+"m"+s.toFixed(1)+"s";'
+            f'    else if(m>0) el.textContent=m+"m"+s.toFixed(1)+"s";'
+            f'    else el.textContent=s.toFixed(1)+"s";'
+            f'  }},100);'
+            f'}})()'
+            f'</script>'
+        )
+
+    while not _done.is_set():
+        _done.wait(timeout=2.0)
+        msg = _progress_info[0]
+        if msg and msg != last_base_msg:
+            last_base_msg = msg
+            m = re.search(r'(\d+)/(\d+)', msg)
+            if m:
+                _last_cur, _last_tot = int(m.group(1)), int(m.group(2))
+            m_rem = re.search(r'remaining ([\d.]+)s', msg)
+            if m_rem:
+                _last_remaining = float(m_rem.group(1))
+            elapsed = time.time() - _start_time
+            if progress and _last_tot > 0:
+                try:
+                    progress(_last_cur / _last_tot)
+                except Exception:
+                    pass
+            yield _make_html(elapsed, _last_remaining, _last_cur, _last_tot)
+
+    t.join()
+    if progress:
+        try:
+            progress(1.0)
+        except Exception:
+            pass
+    yield _make_html(0, 0, 0, 0, done_msg=_result[1])
 
 
 def load_training_dataset(
