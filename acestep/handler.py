@@ -1308,16 +1308,24 @@ class AceStepHandler:
     def process_src_audio(self, audio_file) -> Optional[torch.Tensor]:
         if audio_file is None:
             return None
-            
+
         try:
-            # Load audio file
-            audio, sr = torchaudio.load(audio_file)
-            
+            # Load audio file - try soundfile first as fallback for torchcodec issues
+            try:
+                import soundfile as sf
+                import numpy as np
+                data, sr = sf.read(audio_file, dtype='float32')
+                if data.ndim == 1:
+                    data = np.stack([data, data], axis=-1)
+                audio = torch.from_numpy(data.T)  # [channels, samples]
+            except Exception:
+                audio, sr = torchaudio.load(audio_file)
+
             # Normalize to stereo 48kHz
             audio = self._normalize_audio_to_stereo_48k(audio, sr)
-            
+
             return audio
-            
+
         except Exception as e:
             logger.exception("[process_src_audio] Error processing source audio")
             return None
